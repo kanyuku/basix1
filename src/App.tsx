@@ -41,6 +41,7 @@ interface Asset {
   available: string;
   type: 'NFT' | 'Phygital' | 'Fractional';
   image: string;
+  isOwned?: boolean;
 }
 
 interface WalletInfo {
@@ -74,6 +75,135 @@ const INITIAL_ASSETS: Asset[] = [
 const CATEGORIES = ['All Assets', 'NFTs', 'Phygital', 'Fractional'];
 
 // --- Components ---
+
+const SellModal = ({ 
+  isOpen, 
+  onClose, 
+  asset,
+  onSellSuccess 
+}: { 
+  isOpen: boolean; 
+  onClose: () => void; 
+  asset: Asset | null;
+  onSellSuccess: (assetId: string, price: string) => void;
+}) => {
+  const [price, setPrice] = useState('');
+  const [isListing, setIsListing] = useState(false);
+  const [step, setStep] = useState(1);
+
+  if (!asset) return null;
+
+  const handleList = async () => {
+    if (!price) return;
+    setIsListing(true);
+    // Simulate listing on Cardano (Smart Contract interaction)
+    await new Promise(resolve => setTimeout(resolve, 2500));
+    setIsListing(false);
+    setStep(2);
+    onSellSuccess(asset.id, `${price} ADA`);
+  };
+
+  const reset = () => {
+    setStep(1);
+    setPrice('');
+    onClose();
+  };
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-6">
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={reset}
+            className="absolute inset-0 bg-zinc-900/60 backdrop-blur-md"
+          />
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.9, y: 40 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.9, y: 40 }}
+            className="relative bg-white w-full max-w-lg rounded-[3rem] shadow-2xl overflow-hidden"
+          >
+            <div className="p-10">
+              <div className="flex justify-between items-center mb-10">
+                <h3 className="text-3xl font-bold font-headline tracking-tight">List for Sale</h3>
+                <button onClick={reset} className="p-2 hover:bg-zinc-100 rounded-full transition-colors">
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              {step === 1 ? (
+                <div className="space-y-8">
+                  <div className="flex items-center gap-6 p-4 bg-zinc-50 rounded-3xl">
+                    <img src={asset.image} alt={asset.title} className="w-20 h-20 rounded-2xl object-cover shadow-sm" />
+                    <div>
+                      <h4 className="font-bold text-zinc-900">{asset.title}</h4>
+                      <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest mt-1">Owned Asset</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Set Listing Price (ADA)</label>
+                    <div className="relative">
+                      <input 
+                        type="number" 
+                        value={price}
+                        onChange={e => setPrice(e.target.value)}
+                        placeholder="e.g. 450"
+                        className="w-full bg-zinc-50 border-none rounded-2xl py-5 px-6 text-lg font-bold focus:ring-2 focus:ring-zinc-900 transition-all"
+                      />
+                      <div className="absolute right-6 top-1/2 -translate-y-1/2 text-zinc-400 font-bold text-sm">ADA</div>
+                    </div>
+                  </div>
+
+                  <div className="p-4 bg-amber-50 rounded-2xl flex gap-3">
+                    <Info className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+                    <p className="text-[10px] text-amber-700 leading-relaxed font-medium">
+                      Listing your NFT will move it to a secure smart contract escrow. You can cancel the listing at any time.
+                    </p>
+                  </div>
+
+                  <button 
+                    disabled={!price || isListing}
+                    onClick={handleList}
+                    className="w-full bg-zinc-900 text-white font-bold py-5 rounded-2xl uppercase tracking-[0.2em] text-xs hover:bg-zinc-800 transition-all disabled:opacity-30 flex items-center justify-center gap-3"
+                  >
+                    {isListing ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Broadcasting...
+                      </>
+                    ) : (
+                      'Confirm Listing'
+                    )}
+                  </button>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center py-6 text-center">
+                  <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mb-8">
+                    <CheckCircle2 className="w-10 h-10" />
+                  </div>
+                  <h4 className="text-2xl font-bold font-headline mb-4">Asset Listed!</h4>
+                  <p className="text-zinc-500 text-sm max-w-xs leading-relaxed mb-10">
+                    Your NFT is now live on the marketplace for {price} ADA.
+                  </p>
+                  <button 
+                    onClick={reset}
+                    className="w-full bg-zinc-900 text-white font-bold py-5 rounded-2xl uppercase tracking-[0.2em] text-xs hover:bg-zinc-800 transition-all"
+                  >
+                    Done
+                  </button>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+  );
+};
 
 const MintModal = ({ 
   isOpen, 
@@ -460,54 +590,118 @@ const BottomNav = ({ onMintClick }: { onMintClick: () => void }) => (
   </nav>
 );
 
-const AssetCard = ({ asset }: { asset: Asset }) => (
-  <motion.div 
-    layout
-    initial={{ opacity: 0, y: 20 }}
-    animate={{ opacity: 1, y: 0 }}
-    className="group cursor-pointer"
-  >
-    <div className="aspect-[4/5] overflow-hidden rounded-2xl bg-zinc-100 relative">
-      <img 
-        className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" 
-        src={asset.image} 
-        alt={asset.title}
-        referrerPolicy="no-referrer"
-      />
-      <div className="absolute top-4 right-4 bg-white/90 backdrop-blur-md px-2.5 py-1 rounded-lg text-[9px] font-bold text-zinc-900 uppercase tracking-tighter border border-white/20 shadow-sm">
-        {asset.type}
-      </div>
-    </div>
-    <div className="mt-5 space-y-1">
-      <div className="flex justify-between items-start">
-        <h4 className="font-headline font-bold text-lg tracking-tight text-zinc-900">{asset.title}</h4>
-        <button className="p-1 hover:bg-zinc-100 rounded-full transition-colors">
-          <Heart className="w-4 h-4 text-zinc-400 hover:text-rose-500 transition-colors" />
-        </button>
-      </div>
-      <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest">
-        by <span className="text-zinc-900">{asset.creator}</span>
-      </p>
-      <div className="flex justify-between items-center pt-4 border-t border-zinc-100 mt-5">
-        <div>
-          <p className="text-[9px] text-zinc-400 uppercase font-bold tracking-widest">Price</p>
-          <p className="text-sm font-extrabold text-zinc-900">{asset.price}</p>
+const AssetCard: React.FC<{ 
+  asset: Asset; 
+  onSellClick?: (asset: Asset) => void;
+}> = ({ 
+  asset, 
+  onSellClick 
+}) => {
+  return (
+    <motion.div 
+      layout
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="group cursor-pointer"
+    >
+      <div className="aspect-[4/5] overflow-hidden rounded-2xl bg-zinc-100 relative">
+        <img 
+          className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" 
+          src={asset.image} 
+          alt={asset.title}
+          referrerPolicy="no-referrer"
+        />
+        <div className="absolute top-4 right-4 bg-white/90 backdrop-blur-md px-2.5 py-1 rounded-lg text-[9px] font-bold text-zinc-900 uppercase tracking-tighter border border-white/20 shadow-sm">
+          {asset.type}
         </div>
-        <div className="text-right">
-          <p className="text-[9px] text-zinc-400 uppercase font-bold tracking-widest">Available</p>
-          <p className="text-[10px] font-bold text-emerald-600">{asset.available}</p>
+        
+        {asset.isOwned && onSellClick && (
+          <div className="absolute inset-0 bg-zinc-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-[2px]">
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                onSellClick(asset);
+              }}
+              className="bg-white text-zinc-900 font-bold px-8 py-3 rounded-full uppercase tracking-widest text-[10px] hover:scale-105 active:scale-95 transition-all shadow-xl"
+            >
+              Sell Asset
+            </button>
+          </div>
+        )}
+      </div>
+      <div className="mt-5 space-y-1">
+        <div className="flex justify-between items-start">
+          <h4 className="font-headline font-bold text-lg tracking-tight text-zinc-900">{asset.title}</h4>
+          <button className="p-1 hover:bg-zinc-100 rounded-full transition-colors">
+            <Heart className="w-4 h-4 text-zinc-400 hover:text-rose-500 transition-colors" />
+          </button>
+        </div>
+        <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest">
+          by <span className="text-zinc-900">{asset.creator}</span>
+        </p>
+        <div className="flex justify-between items-center pt-4 border-t border-zinc-100 mt-5">
+          <div>
+            <p className="text-[9px] text-zinc-400 uppercase font-bold tracking-widest">Price</p>
+            <p className="text-sm font-extrabold text-zinc-900">{asset.price}</p>
+          </div>
+          <div className="text-right">
+            <p className="text-[9px] text-zinc-400 uppercase font-bold tracking-widest">Status</p>
+            <p className={cn(
+              "text-[10px] font-bold",
+              asset.isOwned ? "text-blue-600" : "text-emerald-600"
+            )}>
+              {asset.isOwned ? 'OWNED' : asset.available}
+            </p>
+          </div>
         </div>
       </div>
-    </div>
-  </motion.div>
-);
+    </motion.div>
+  );
+};
 
 export default function App() {
   const [activeCategory, setActiveCategory] = useState('All Assets');
   const [isWalletModalOpen, setIsWalletModalOpen] = useState(false);
   const [isMintModalOpen, setIsMintModalOpen] = useState(false);
+  const [isSellModalOpen, setIsSellModalOpen] = useState(false);
+  const [selectedAssetForSell, setSelectedAssetForSell] = useState<Asset | null>(null);
   const [connectedAddress, setConnectedAddress] = useState<string | null>(null);
   const [assets, setAssets] = useState<Asset[]>(INITIAL_ASSETS);
+  const [ownedAssets, setOwnedAssets] = useState<Asset[]>([]);
+  const [isLoadingOwned, setIsLoadingOwned] = useState(false);
+
+  const fetchOwnedAssets = async (address: string) => {
+    setIsLoadingOwned(true);
+    // In a real app, we'd use an indexer like Blockfrost to fetch assets for the address
+    // Simulating blockchain asset discovery
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    const detected: Asset[] = [
+      {
+        id: 'owned-1',
+        title: 'CYBER_PUNK_REVENGE',
+        creator: 'You',
+        price: '0.00 ADA',
+        available: 'Owned',
+        type: 'NFT',
+        image: 'https://picsum.photos/seed/cyber1/800/1000',
+        isOwned: true
+      },
+      {
+        id: 'owned-2',
+        title: 'ETHEREAL_VOID_04',
+        creator: 'You',
+        price: '0.00 ADA',
+        available: 'Owned',
+        type: 'NFT',
+        image: 'https://picsum.photos/seed/void4/800/1000',
+        isOwned: true
+      }
+    ];
+    
+    setOwnedAssets(detected);
+    setIsLoadingOwned(false);
+  };
 
   const handleConnectWallet = async (walletKey: string) => {
     try {
@@ -515,15 +709,20 @@ export default function App() {
       if (cardano && cardano[walletKey]) {
         const api = await cardano[walletKey].enable();
         const hexAddresses = await api.getUsedAddresses();
+        let address = '';
         if (hexAddresses.length > 0) {
-          setConnectedAddress(hexAddresses[0]);
-          setIsWalletModalOpen(false);
+          address = hexAddresses[0];
         } else {
           const unused = await api.getUnusedAddresses();
           if (unused.length > 0) {
-            setConnectedAddress(unused[0]);
-            setIsWalletModalOpen(false);
+            address = unused[0];
           }
+        }
+
+        if (address) {
+          setConnectedAddress(address);
+          setIsWalletModalOpen(false);
+          fetchOwnedAssets(address);
         }
       }
     } catch (error) {
@@ -533,7 +732,24 @@ export default function App() {
   };
 
   const handleMintSuccess = (newAsset: Asset) => {
-    setAssets(prev => [newAsset, ...prev]);
+    const ownedAsset = { ...newAsset, isOwned: true };
+    setOwnedAssets(prev => [ownedAsset, ...prev]);
+  };
+
+  const handleSellClick = (asset: Asset) => {
+    setSelectedAssetForSell(asset);
+    setIsSellModalOpen(true);
+  };
+
+  const handleSellSuccess = (assetId: string, price: string) => {
+    // Move from owned to public marketplace
+    const asset = ownedAssets.find(a => a.id === assetId);
+    if (asset) {
+      const listedAsset = { ...asset, price, isOwned: false, available: '100%' };
+      setAssets(prev => [listedAsset, ...prev]);
+      setOwnedAssets(prev => prev.filter(a => a.id !== assetId));
+    }
+    setIsSellModalOpen(false);
   };
 
   const handleMintClick = () => {
@@ -563,6 +779,13 @@ export default function App() {
         onMintSuccess={handleMintSuccess}
       />
 
+      <SellModal 
+        isOpen={isSellModalOpen}
+        onClose={() => setIsSellModalOpen(false)}
+        asset={selectedAssetForSell}
+        onSellSuccess={handleSellSuccess}
+      />
+
       <main className="mt-20 px-6 flex-grow max-w-7xl mx-auto w-full">
         {/* Hero Section */}
         <section className="mt-12 mb-10">
@@ -582,6 +805,46 @@ export default function App() {
             The premier liquid marketplace for high-value physical assets. Secured by blockchain.
           </motion.p>
         </section>
+
+        {/* Owned Assets Section */}
+        <AnimatePresence>
+          {connectedAddress && (
+            <motion.section 
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="mt-12 overflow-hidden"
+            >
+              <div className="flex justify-between items-end mb-8 border-b border-zinc-100 pb-6">
+                <div>
+                  <h2 className="text-xl md:text-2xl font-bold font-headline tracking-tight uppercase text-zinc-900">Currently Owned Assets</h2>
+                  <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest mt-2">Detected in your wallet</p>
+                </div>
+              </div>
+
+              {isLoadingOwned ? (
+                <div className="flex flex-col items-center justify-center py-12 gap-4 bg-zinc-50 rounded-[3rem] border border-dashed border-zinc-200">
+                  <Loader2 className="w-8 h-8 text-zinc-300 animate-spin" />
+                  <p className="text-zinc-400 text-[9px] font-bold uppercase tracking-[0.3em]">Scanning Blockchain...</p>
+                </div>
+              ) : ownedAssets.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-12">
+                  {ownedAssets.map((asset) => (
+                    <AssetCard 
+                      key={asset.id} 
+                      asset={asset} 
+                      onSellClick={handleSellClick}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-16 bg-zinc-50 rounded-[3rem] border border-dashed border-zinc-200">
+                  <p className="text-zinc-400 text-[10px] font-bold uppercase tracking-widest">No assets detected in this wallet</p>
+                </div>
+              )}
+            </motion.section>
+          )}
+        </AnimatePresence>
 
         {/* Search & Filters */}
         <section className="space-y-8 mt-12">
