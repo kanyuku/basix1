@@ -3,6 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+/// <reference types="vite/client" />
+
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Menu, 
@@ -26,6 +28,13 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { Lucid, Blockfrost, type MintingPolicy, type PolicyId, type TxHash, fromText } from 'lucid-cardano';
+import { Buffer } from 'buffer';
+
+// Polyfill Buffer for Cardano libraries
+if (typeof window !== 'undefined' && !window.Buffer) {
+  window.Buffer = Buffer;
+}
 
 // Utility for tailwind classes
 function cn(...inputs: ClassValue[]) {
@@ -208,14 +217,18 @@ const SellModal = ({
 const MintModal = ({ 
   isOpen, 
   onClose, 
-  onMintSuccess 
+  onMintSuccess,
+  lucid
 }: { 
   isOpen: boolean; 
   onClose: () => void; 
   onMintSuccess: (asset: Asset) => void;
+  lucid: Lucid | null;
 }) => {
   const [step, setStep] = useState(1);
   const [isMinting, setIsMinting] = useState(false);
+  const [mintError, setMintError] = useState<string | null>(null);
+  const [txHash, setTxHash] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -239,22 +252,96 @@ const MintModal = ({
     if (!formData.name || !formData.image) return;
     
     setIsMinting(true);
-    // Simulate blockchain transaction
-    await new Promise(resolve => setTimeout(resolve, 3000));
+    setMintError(null);
     
-    const newAsset: Asset = {
-      id: Math.random().toString(36).substr(2, 9),
-      title: formData.name,
-      creator: 'You',
-      price: '0.00 ETH', // Newly minted
-      available: '100%',
-      type: 'NFT',
-      image: formData.image,
-    };
-    
-    setIsMinting(false);
-    setStep(3);
-    onMintSuccess(newAsset);
+    try {
+      if (!lucid) {
+        // Simulation mode
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        const hash = "simulated_tx_hash_" + Math.random().toString(36).substring(7);
+        setTxHash(hash);
+        
+        const newAsset: Asset = {
+          id: hash,
+          title: formData.name,
+          creator: 'You',
+          price: '0.00 ADA',
+          available: '100%',
+          type: 'NFT',
+          image: formData.image,
+        };
+        
+        setStep(3);
+        onMintSuccess(newAsset);
+        return;
+      }
+
+      // Real minting logic
+      const utxos = await lucid.wallet.getUtxos();
+      if (utxos.length === 0) throw new Error("No UTXOs found in wallet. Please fund your wallet.");
+      
+      const address = await lucid.wallet.address();
+      const { paymentCredential } = lucid.utils.getAddressDetails(address);
+      
+      if (!paymentCredential) throw new Error("Could not get payment credential.");
+
+      // 2. Create a simple minting policy (Native Script)
+      const mintingPolicy: MintingPolicy = lucid.utils.nativeScriptFromJson({
+        type: "all",
+        scripts: [
+          { type: "sig", keyHash: paymentCredential.hash }
+        ]
+      });
+
+      const policyId: PolicyId = lucid.utils.mintingPolicyToId(mintingPolicy);
+      const assetName = fromText(formData.name);
+      const unit = policyId + assetName;
+
+      // 3. Prepare metadata (CIP-25)
+      // Note: In a real app, you'd upload the image to IPFS first.
+      // For this demo, we'll use a placeholder IPFS hash or the base64 if small (not recommended for mainnet).
+      const metadata = {
+        [policyId]: {
+          [formData.name]: {
+            name: formData.name,
+            image: "ipfs://QmPlaceholderHash", // Placeholder for demo
+            description: formData.description,
+            mediaType: "image/png",
+          }
+        }
+      };
+
+      // 4. Build, sign, and submit the transaction
+      const tx = await lucid
+        .newTx()
+        .mintAssets({ [unit]: 1n })
+        .attachMintingPolicy(mintingPolicy)
+        .attachMetadata(721, metadata)
+        .complete();
+
+      const signedTx = await tx.sign().complete();
+      const hash: TxHash = await signedTx.submit();
+      
+      setTxHash(hash);
+      
+      const newAsset: Asset = {
+        id: hash,
+        title: formData.name,
+        creator: 'You',
+        price: '0.00 ADA',
+        available: '100%',
+        type: 'NFT',
+        image: formData.image,
+      };
+      
+      setStep(3);
+      onMintSuccess(newAsset);
+    } catch (error: any) {
+      console.error("Minting failed:", error);
+      setMintError(error.message || "Minting failed. Please check your wallet and try again.");
+    } finally {
+      setIsMinting(false);
+    }
   };
 
   const reset = () => {
@@ -292,6 +379,19 @@ const MintModal = ({
                   <X className="w-6 h-6" />
                 </button>
               </div>
+
+              {!lucid && (
+                <div className="mb-8 p-4 bg-amber-50 border border-amber-200 rounded-2xl flex gap-3">
+                  <Info className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <p className="text-xs font-bold text-amber-900">Cardano Integration Incomplete</p>
+                    <p className="text-[10px] text-amber-700 leading-relaxed">
+                      To enable real blockchain minting, please configure your <b>Blockfrost Project ID</b> in the environment variables. 
+                      The app is currently running in <b>Simulation Mode</b>.
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {step === 1 && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
@@ -372,6 +472,22 @@ const MintModal = ({
                         We are broadcasting your transaction to the Cardano network. Please do not close this window.
                       </p>
                     </>
+                  ) : mintError ? (
+                    <>
+                      <div className="w-20 h-20 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center mb-8">
+                        <X className="w-10 h-10" />
+                      </div>
+                      <h4 className="text-2xl font-bold font-headline mb-4 text-rose-600">Minting Failed</h4>
+                      <p className="text-zinc-500 text-sm max-w-xs leading-relaxed mb-8">
+                        {mintError}
+                      </p>
+                      <button 
+                        onClick={() => setStep(1)}
+                        className="w-full bg-zinc-900 text-white font-bold py-5 rounded-2xl uppercase tracking-[0.2em] text-xs hover:bg-zinc-800 transition-all"
+                      >
+                        Try Again
+                      </button>
+                    </>
                   ) : (
                     <>
                       <div className="w-32 h-32 rounded-3xl overflow-hidden mb-8 shadow-xl">
@@ -406,7 +522,7 @@ const MintModal = ({
                   </div>
                   <h4 className="text-3xl font-bold font-headline mb-4">NFT Minted Successfully!</h4>
                   <p className="text-zinc-500 text-sm max-w-xs leading-relaxed mb-10">
-                    Your masterpiece is now live on the Cardano blockchain. You can view it in your wallet or on the explorer.
+                    Your masterpiece is now live on the Cardano blockchain. Transaction: <span className="text-zinc-900 font-mono text-[10px] break-all">{txHash}</span>
                   </p>
                   
                   <div className="flex flex-col gap-3 w-full max-w-xs">
@@ -416,9 +532,14 @@ const MintModal = ({
                     >
                       View in Collection
                     </button>
-                    <button className="w-full text-zinc-400 font-bold py-3 uppercase tracking-widest text-[10px] hover:text-zinc-900 transition-colors flex items-center justify-center gap-2">
+                    <a 
+                      href={`https://${import.meta.env.VITE_CARDANO_NETWORK === 'mainnet' ? '' : import.meta.env.VITE_CARDANO_NETWORK + '.'}cardanoscan.io/transaction/${txHash}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full text-zinc-400 font-bold py-3 uppercase tracking-widest text-[10px] hover:text-zinc-900 transition-colors flex items-center justify-center gap-2"
+                    >
                       View on Cardanoscan <ExternalLink className="w-3 h-3" />
-                    </button>
+                    </a>
                   </div>
                 </div>
               )}
@@ -666,41 +787,94 @@ export default function App() {
   const [isSellModalOpen, setIsSellModalOpen] = useState(false);
   const [selectedAssetForSell, setSelectedAssetForSell] = useState<Asset | null>(null);
   const [connectedAddress, setConnectedAddress] = useState<string | null>(null);
+  const [lucid, setLucid] = useState<Lucid | null>(null);
   const [assets, setAssets] = useState<Asset[]>(INITIAL_ASSETS);
   const [ownedAssets, setOwnedAssets] = useState<Asset[]>([]);
   const [isLoadingOwned, setIsLoadingOwned] = useState(false);
 
-  const fetchOwnedAssets = async (address: string) => {
-    setIsLoadingOwned(true);
-    // In a real app, we'd use an indexer like Blockfrost to fetch assets for the address
-    // Simulating blockchain asset discovery
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    const detected: Asset[] = [
-      {
-        id: 'owned-1',
-        title: 'CYBER_PUNK_REVENGE',
-        creator: 'You',
-        price: '0.00 ADA',
-        available: 'Owned',
-        type: 'NFT',
-        image: 'https://picsum.photos/seed/cyber1/800/1000',
-        isOwned: true
-      },
-      {
-        id: 'owned-2',
-        title: 'ETHEREAL_VOID_04',
-        creator: 'You',
-        price: '0.00 ADA',
-        available: 'Owned',
-        type: 'NFT',
-        image: 'https://picsum.photos/seed/void4/800/1000',
-        isOwned: true
+  // Initialize Lucid on mount if project ID is available
+  useEffect(() => {
+    const initLucid = async () => {
+      const projectId = import.meta.env.VITE_BLOCKFROST_PROJECT_ID;
+      const network = import.meta.env.VITE_CARDANO_NETWORK || 'preprod';
+      
+      if (projectId) {
+        try {
+          const l = await Lucid.new(
+            new Blockfrost(
+              `https://cardano-${network}.blockfrost.io/api/v0`,
+              projectId
+            ),
+            network === 'mainnet' ? 'Mainnet' : network === 'preprod' ? 'Preprod' : 'Preview'
+          );
+          setLucid(l);
+        } catch (error) {
+          console.error("Failed to initialize Lucid:", error);
+        }
       }
-    ];
+    };
+    initLucid();
+  }, []);
+
+  const fetchOwnedAssets = async (address: string) => {
+    if (!lucid) return;
+    setIsLoadingOwned(true);
     
-    setOwnedAssets(detected);
-    setIsLoadingOwned(false);
+    try {
+      // Fetch real UTXOs from the blockchain
+      const utxos = await lucid.utxosAt(address);
+      
+      const detected: Asset[] = [];
+      
+      for (const utxo of utxos) {
+        for (const [unit, amount] of Object.entries(utxo.assets)) {
+          if (unit !== 'lovelace') {
+            // unit is policyId + assetNameHex
+            const policyId = unit.slice(0, 56);
+            const assetNameHex = unit.slice(56);
+            const assetName = Buffer.from(assetNameHex, 'hex').toString('utf8');
+            
+            // In a real app, we'd fetch metadata from the blockchain or an indexer
+            // For now, we'll create a placeholder asset object for detected tokens
+            detected.push({
+              id: unit,
+              title: assetName || `Asset ${unit.slice(0, 8)}...`,
+              creator: 'Unknown',
+              price: '0.00 ADA',
+              available: 'Owned',
+              type: 'NFT',
+              image: `https://picsum.photos/seed/${unit}/800/1000`, // Placeholder image
+              isOwned: true
+            });
+          }
+        }
+      }
+      
+      // Filter out duplicates (if multiple UTXOs contain the same asset)
+      const uniqueDetected = detected.filter((asset, index, self) =>
+        index === self.findIndex((t) => t.id === asset.id)
+      );
+      
+      setOwnedAssets(uniqueDetected);
+    } catch (error) {
+      console.error("Failed to fetch owned assets:", error);
+      // Fallback to mock data if real fetch fails (e.g. no Blockfrost key)
+      const mockDetected: Asset[] = [
+        {
+          id: 'owned-1',
+          title: 'CYBER_PUNK_REVENGE',
+          creator: 'You',
+          price: '0.00 ADA',
+          available: 'Owned',
+          type: 'NFT',
+          image: 'https://picsum.photos/seed/cyber1/800/1000',
+          isOwned: true
+        }
+      ];
+      setOwnedAssets(mockDetected);
+    } finally {
+      setIsLoadingOwned(false);
+    }
   };
 
   const handleConnectWallet = async (walletKey: string) => {
@@ -708,6 +882,28 @@ export default function App() {
       const cardano = (window as any).cardano;
       if (cardano && cardano[walletKey]) {
         const api = await cardano[walletKey].enable();
+        
+        // If lucid is initialized, select the wallet
+        if (lucid) {
+          lucid.selectWallet(api);
+        } else {
+          // Fallback initialization if not done on mount
+          const projectId = import.meta.env.VITE_BLOCKFROST_PROJECT_ID;
+          const network = import.meta.env.VITE_CARDANO_NETWORK || 'preprod';
+          
+          if (projectId) {
+            const l = await Lucid.new(
+              new Blockfrost(
+                `https://cardano-${network}.blockfrost.io/api/v0`,
+                projectId
+              ),
+              network === 'mainnet' ? 'Mainnet' : network === 'preprod' ? 'Preprod' : 'Preview'
+            );
+            l.selectWallet(api);
+            setLucid(l);
+          }
+        }
+
         const hexAddresses = await api.getUsedAddresses();
         let address = '';
         if (hexAddresses.length > 0) {
@@ -777,6 +973,7 @@ export default function App() {
         isOpen={isMintModalOpen} 
         onClose={() => setIsMintModalOpen(false)} 
         onMintSuccess={handleMintSuccess}
+        lucid={lucid}
       />
 
       <SellModal 
