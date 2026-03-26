@@ -26,6 +26,11 @@ export default defineConfig(({mode}) => {
         '@': path.resolve(__dirname, '.'),
         'node:stream/web': 'readable-stream',
         'stream/web': 'readable-stream',
+        'node:net': 'net-browserify',
+        'net': 'net-browserify',
+        'node-fetch': 'cross-fetch',
+        'node:util': 'util',
+        'util': 'util',
       },
     },
     server: {

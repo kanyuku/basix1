@@ -89,27 +89,54 @@ const SellModal = ({
   isOpen, 
   onClose, 
   asset,
-  onSellSuccess 
+  onSellSuccess,
+  lucid
 }: { 
   isOpen: boolean; 
   onClose: () => void; 
   asset: Asset | null;
   onSellSuccess: (assetId: string, price: string) => void;
+  lucid: Lucid | null;
 }) => {
   const [price, setPrice] = useState('');
   const [isListing, setIsListing] = useState(false);
   const [step, setStep] = useState(1);
+  const [txHash, setTxHash] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   if (!asset) return null;
 
   const handleList = async () => {
     if (!price) return;
     setIsListing(true);
-    // Simulate listing on Cardano (Smart Contract interaction)
-    await new Promise(resolve => setTimeout(resolve, 2500));
-    setIsListing(false);
-    setStep(2);
-    onSellSuccess(asset.id, `${price} ADA`);
+    setError(null);
+    
+    try {
+      if (lucid) {
+        // Simulate a real transaction by asking for a signature
+        // In a real marketplace, this would be a script transaction (plutus)
+        // For this demo, we'll simulate the signing process
+        const address = await lucid.wallet.address();
+        const tx = await lucid.newTx()
+          .payToAddress(address, { lovelace: 1000000n }) // Dummy self-payment to trigger signature
+          .complete();
+        const signedTx = await tx.sign().complete();
+        const hash = await signedTx.submit();
+        setTxHash(hash);
+      } else {
+        // Simulation mode
+        await new Promise(resolve => setTimeout(resolve, 2500));
+        setTxHash("simulated_listing_hash_" + Math.random().toString(36).substring(7));
+      }
+      
+      setIsListing(false);
+      setStep(2);
+      onSellSuccess(asset.id, `${price} ADA`);
+    } catch (err: any) {
+      console.error("Listing failed:", err);
+      setError(err.message || "Failed to list asset. Please try again.");
+      setIsListing(false);
+    }
   };
 
   const reset = () => {
@@ -195,8 +222,158 @@ const SellModal = ({
                     <CheckCircle2 className="w-10 h-10" />
                   </div>
                   <h4 className="text-2xl font-bold font-headline mb-4">Asset Listed!</h4>
+                  <p className="text-zinc-500 text-sm max-w-xs leading-relaxed mb-10 px-4">
+                    Your NFT is now live on the marketplace for {price} ADA. <br/>
+                    <span className="text-[10px] text-zinc-400 font-mono break-all mt-4 block">TX: {txHash}</span>
+                  </p>
+                  <button 
+                    onClick={reset}
+                    className="w-full bg-zinc-900 text-white font-bold py-5 rounded-2xl uppercase tracking-[0.2em] text-xs hover:bg-zinc-800 transition-all"
+                  >
+                    Done
+                  </button>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+  );
+};
+
+const BuyModal = ({ 
+  isOpen, 
+  onClose, 
+  asset,
+  onBuySuccess,
+  lucid
+}: { 
+  isOpen: boolean; 
+  onClose: () => void; 
+  asset: Asset | null;
+  onBuySuccess: (assetId: string) => void;
+  lucid: Lucid | null;
+}) => {
+  const [isBuying, setIsBuying] = useState(false);
+  const [step, setStep] = useState(1);
+  const [txHash, setTxHash] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!asset) return null;
+
+  const handleBuy = async () => {
+    setIsBuying(true);
+    setError(null);
+    
+    try {
+      if (lucid) {
+        // Simulate a real purchase transaction
+        const address = await lucid.wallet.address();
+        const tx = await lucid.newTx()
+          .payToAddress(address, { lovelace: 1000000n }) // Dummy self-payment to trigger signature
+          .complete();
+        const signedTx = await tx.sign().complete();
+        const hash = await signedTx.submit();
+        setTxHash(hash);
+      } else {
+        // Simulation mode
+        await new Promise(resolve => setTimeout(resolve, 2500));
+        setTxHash("simulated_purchase_hash_" + Math.random().toString(36).substring(7));
+      }
+      
+      setIsBuying(false);
+      setStep(2);
+      onBuySuccess(asset.id);
+    } catch (err: any) {
+      console.error("Purchase failed:", err);
+      setError(err.message || "Failed to purchase asset. Please try again.");
+      setIsBuying(false);
+    }
+  };
+
+  const reset = () => {
+    setStep(1);
+    onClose();
+  };
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-6">
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={reset}
+            className="absolute inset-0 bg-zinc-900/60 backdrop-blur-md"
+          />
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.9, y: 40 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.9, y: 40 }}
+            className="relative bg-white w-full max-w-lg rounded-[3rem] shadow-2xl overflow-hidden"
+          >
+            <div className="p-10">
+              <div className="flex justify-between items-center mb-10">
+                <h3 className="text-3xl font-bold font-headline tracking-tight">Purchase NFT</h3>
+                <button onClick={reset} className="p-2 hover:bg-zinc-100 rounded-full transition-colors">
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              {step === 1 ? (
+                <div className="space-y-8">
+                  <div className="flex items-center gap-6 p-4 bg-zinc-50 rounded-3xl">
+                    <img src={asset.image} alt={asset.title} className="w-20 h-20 rounded-2xl object-cover shadow-sm" />
+                    <div>
+                      <h4 className="font-bold text-zinc-900">{asset.title}</h4>
+                      <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest mt-1">Marketplace Asset</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Price</label>
+                    <div className="text-3xl font-bold text-zinc-900">{asset.price}</div>
+                  </div>
+
+                  <div className="p-4 bg-zinc-50 rounded-2xl flex gap-3">
+                    <Info className="w-4 h-4 text-zinc-400 mt-0.5 shrink-0" />
+                    <p className="text-[10px] text-zinc-500 leading-relaxed font-medium">
+                      Purchasing this NFT will transfer the ownership to your wallet and the funds to the seller.
+                    </p>
+                  </div>
+
+                  {error && (
+                    <div className="p-4 bg-rose-50 text-rose-600 text-xs rounded-2xl font-medium">
+                      {error}
+                    </div>
+                  )}
+
+                  <button 
+                    disabled={isBuying}
+                    onClick={handleBuy}
+                    className="w-full bg-zinc-900 text-white font-bold py-5 rounded-2xl uppercase tracking-[0.2em] text-xs hover:bg-zinc-800 transition-all disabled:opacity-30 flex items-center justify-center gap-3"
+                  >
+                    {isBuying ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Processing...
+                      </>
+                    ) : (
+                      'Confirm Purchase'
+                    )}
+                  </button>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center py-10 text-center">
+                  <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mb-8">
+                    <CheckCircle2 className="w-10 h-10" />
+                  </div>
+                  <h4 className="text-2xl font-bold font-headline mb-4">Purchase Successful!</h4>
                   <p className="text-zinc-500 text-sm max-w-xs leading-relaxed mb-10">
-                    Your NFT is now live on the marketplace for {price} ADA.
+                    You now own {asset.title}. <br/>
+                    <span className="text-[10px] text-zinc-400 font-mono break-all mt-4 block">TX: {txHash}</span>
                   </p>
                   <button 
                     onClick={reset}
@@ -714,9 +891,11 @@ const BottomNav = ({ onMintClick }: { onMintClick: () => void }) => (
 const AssetCard: React.FC<{ 
   asset: Asset; 
   onSellClick?: (asset: Asset) => void;
+  onBuyClick?: (asset: Asset) => void;
 }> = ({ 
   asset, 
-  onSellClick 
+  onSellClick,
+  onBuyClick
 }) => {
   return (
     <motion.div 
@@ -746,6 +925,20 @@ const AssetCard: React.FC<{
               className="bg-white text-zinc-900 font-bold px-8 py-3 rounded-full uppercase tracking-widest text-[10px] hover:scale-105 active:scale-95 transition-all shadow-xl"
             >
               Sell Asset
+            </button>
+          </div>
+        )}
+
+        {!asset.isOwned && onBuyClick && (
+          <div className="absolute inset-0 bg-zinc-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-[2px]">
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                onBuyClick(asset);
+              }}
+              className="bg-white text-zinc-900 font-bold px-8 py-3 rounded-full uppercase tracking-widest text-[10px] hover:scale-105 active:scale-95 transition-all shadow-xl"
+            >
+              Buy Asset
             </button>
           </div>
         )}
@@ -786,6 +979,8 @@ export default function App() {
   const [isMintModalOpen, setIsMintModalOpen] = useState(false);
   const [isSellModalOpen, setIsSellModalOpen] = useState(false);
   const [selectedAssetForSell, setSelectedAssetForSell] = useState<Asset | null>(null);
+  const [isBuyModalOpen, setIsBuyModalOpen] = useState(false);
+  const [selectedAssetForBuy, setSelectedAssetForBuy] = useState<Asset | null>(null);
   const [connectedAddress, setConnectedAddress] = useState<string | null>(null);
   const [lucid, setLucid] = useState<Lucid | null>(null);
   const [assets, setAssets] = useState<Asset[]>(INITIAL_ASSETS);
@@ -916,9 +1111,11 @@ export default function App() {
         }
 
         if (address) {
-          setConnectedAddress(address);
+          // Convert hex address to Bech32 if needed
+          const bech32Address = await lucid.wallet.address();
+          setConnectedAddress(bech32Address);
           setIsWalletModalOpen(false);
-          fetchOwnedAssets(address);
+          fetchOwnedAssets(bech32Address);
         }
       }
     } catch (error) {
@@ -946,6 +1143,26 @@ export default function App() {
       setOwnedAssets(prev => prev.filter(a => a.id !== assetId));
     }
     setIsSellModalOpen(false);
+  };
+
+  const handleBuyClick = (asset: Asset) => {
+    if (!connectedAddress) {
+      setIsWalletModalOpen(true);
+      return;
+    }
+    setSelectedAssetForBuy(asset);
+    setIsBuyModalOpen(true);
+  };
+
+  const handleBuySuccess = (assetId: string) => {
+    // Move from public marketplace to owned
+    const asset = assets.find(a => a.id === assetId);
+    if (asset) {
+      const ownedAsset = { ...asset, isOwned: true, available: 'Owned' };
+      setOwnedAssets(prev => [ownedAsset, ...prev]);
+      setAssets(prev => prev.filter(a => a.id !== assetId));
+    }
+    setIsBuyModalOpen(false);
   };
 
   const handleMintClick = () => {
@@ -981,6 +1198,15 @@ export default function App() {
         onClose={() => setIsSellModalOpen(false)}
         asset={selectedAssetForSell}
         onSellSuccess={handleSellSuccess}
+        lucid={lucid}
+      />
+
+      <BuyModal 
+        isOpen={isBuyModalOpen}
+        onClose={() => setIsBuyModalOpen(false)}
+        asset={selectedAssetForBuy}
+        onBuySuccess={handleBuySuccess}
+        lucid={lucid}
       />
 
       <main className="mt-20 px-6 flex-grow max-w-7xl mx-auto w-full">
@@ -1113,7 +1339,11 @@ export default function App() {
         {/* Asset Grid */}
         <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-12">
           {assets.map((asset) => (
-            <AssetCard key={asset.id} asset={asset} />
+            <AssetCard 
+              key={asset.id} 
+              asset={asset} 
+              onBuyClick={handleBuyClick}
+            />
           ))}
           
           {/* Skeleton/Placeholder */}
