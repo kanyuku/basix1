@@ -6,6 +6,7 @@
 /// <reference types="vite/client" />
 
 import React, { useState, useEffect, useRef } from 'react';
+import { GoogleGenAI, Type } from "@google/genai";
 import { 
   Menu, 
   Search, 
@@ -23,13 +24,17 @@ import {
   Upload,
   Sparkles,
   Info,
-  Loader2
+  Loader2,
+  BookOpen,
+  Send,
+  MessageSquare
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { Lucid, Blockfrost, type MintingPolicy, type PolicyId, type TxHash, fromText } from 'lucid-cardano';
 import { Buffer } from 'buffer';
+import Markdown from 'react-markdown';
 
 // Polyfill Buffer for Cardano libraries
 if (typeof window !== 'undefined' && !window.Buffer) {
@@ -81,7 +86,167 @@ const INITIAL_ASSETS: Asset[] = [
   }
 ];
 
-const CATEGORIES = ['All Assets', 'NFTs', 'Phygital', 'Fractional'];
+const CATEGORIES = ['All Assets', 'NFTs', 'Phygital', 'Fractional', 'Knowledge Base'];
+
+// --- Knowledge Base Component ---
+
+const KnowledgeBase = () => {
+  const [query, setQuery] = useState('');
+  const [messages, setMessages] = useState<{ role: 'user' | 'assistant', content: string }[]>([]);
+  const [isTyping, setIsTyping] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages]);
+
+  const handleSend = async () => {
+    if (!query.trim()) return;
+
+    const userMessage = query.trim();
+    setMessages(prev => [...prev, { role: 'user', content: userMessage }]);
+    setQuery('');
+    setIsTyping(true);
+
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: userMessage,
+        config: {
+          systemInstruction: "You are a MeTTa (Meta-Type Talk) expert. Answer questions about MeTTa language based on the provided documentation. Be concise and provide code examples when relevant.",
+          tools: [{ urlContext: {} }]
+        },
+        // Note: In a real scenario, we'd pass specific URLs from metta-lang.dev
+        // For this demo, we'll use the main site and some common paths
+        // @ts-ignore - urlContext is a valid tool but might not be in all type definitions
+        urlContext: {
+          urls: [
+            "https://metta-lang.dev/",
+            "https://metta-lang.dev/docs/introduction",
+            "https://metta-lang.dev/docs/guide",
+            "https://metta-lang.dev/docs/reference"
+          ]
+        }
+      });
+
+      const assistantMessage = response.text || "I'm sorry, I couldn't find information about that in the MeTTa documentation.";
+      setMessages(prev => [...prev, { role: 'assistant', content: assistantMessage }]);
+    } catch (error) {
+      console.error("Gemini Error:", error);
+      setMessages(prev => [...prev, { role: 'assistant', content: "Error: Failed to connect to MeTTa Knowledge Base. Please check your connection." }]);
+    } finally {
+      setIsTyping(false);
+    }
+  };
+
+  return (
+    <div className="bg-white border border-zinc-100 rounded-[3rem] shadow-[0_20px_50px_rgba(0,0,0,0.05)] overflow-hidden flex flex-col h-[600px] mt-12">
+      <div className="p-8 border-b border-zinc-100 flex items-center justify-between bg-zinc-50/50">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-zinc-900 flex items-center justify-center shadow-lg shadow-zinc-200">
+            <BookOpen className="w-6 h-6 text-white" />
+          </div>
+          <div>
+            <h3 className="text-xl font-bold font-headline text-zinc-900">MeTTa Knowledge Base</h3>
+            <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest mt-1">Powered by metta-lang.dev</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 px-4 py-2 bg-zinc-100 rounded-full">
+          <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Live Documentation</span>
+        </div>
+      </div>
+
+      <div ref={scrollRef} className="flex-grow overflow-y-auto p-8 space-y-6 no-scrollbar">
+        {messages.length === 0 ? (
+          <div className="h-full flex flex-col items-center justify-center text-center space-y-6">
+            <div className="w-20 h-20 rounded-full bg-zinc-50 flex items-center justify-center">
+              <MessageSquare className="w-10 h-10 text-zinc-200" />
+            </div>
+            <div className="max-w-xs">
+              <p className="text-zinc-900 font-bold text-lg">Ask anything about MeTTa</p>
+              <p className="text-zinc-400 text-xs mt-2">Get instant answers, code snippets, and explanations directly from the official MeTTa language documentation.</p>
+            </div>
+            <div className="grid grid-cols-1 gap-2 w-full max-w-sm">
+              {["What is MeTTa?", "How to define a function in MeTTa?", "Explain pattern matching in MeTTa"].map((suggestion) => (
+                <button 
+                  key={suggestion}
+                  onClick={() => setQuery(suggestion)}
+                  className="text-left px-4 py-3 rounded-2xl border border-zinc-100 text-xs text-zinc-600 hover:bg-zinc-50 hover:border-zinc-200 transition-all"
+                >
+                  {suggestion}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          messages.map((msg, i) => (
+            <motion.div 
+              key={i}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className={cn(
+                "flex flex-col max-w-[85%]",
+                msg.role === 'user' ? "ml-auto items-end" : "items-start"
+              )}
+            >
+              <div className={cn(
+                "px-6 py-4 rounded-[2rem] text-sm leading-relaxed",
+                msg.role === 'user' 
+                  ? "bg-zinc-900 text-white rounded-tr-none" 
+                  : "bg-zinc-50 text-zinc-800 rounded-tl-none border border-zinc-100"
+              )}>
+                <div className="markdown-body prose prose-zinc prose-sm max-w-none">
+                  <Markdown>{msg.content}</Markdown>
+                </div>
+              </div>
+              <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest mt-2 px-2">
+                {msg.role === 'user' ? 'You' : 'MeTTa Expert'}
+              </span>
+            </motion.div>
+          ))
+        )}
+        {isTyping && (
+          <div className="flex items-center gap-3 px-2">
+            <div className="flex gap-1">
+              {[0, 1, 2].map((i) => (
+                <motion.div 
+                  key={i}
+                  animate={{ y: [0, -4, 0] }}
+                  transition={{ duration: 0.6, repeat: Infinity, delay: i * 0.1 }}
+                  className="w-1.5 h-1.5 rounded-full bg-zinc-300"
+                />
+              ))}
+            </div>
+            <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest">MeTTa Expert is thinking...</span>
+          </div>
+        )}
+      </div>
+
+      <div className="p-6 border-t border-zinc-100 bg-white">
+        <div className="relative flex items-center">
+          <input 
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+            placeholder="Ask a question about MeTTa..."
+            className="w-full bg-zinc-50 border border-zinc-100 rounded-full py-4 pl-6 pr-16 text-sm outline-none focus:border-zinc-900 focus:bg-white transition-all"
+          />
+          <button 
+            onClick={handleSend}
+            disabled={!query.trim() || isTyping}
+            className="absolute right-2 w-10 h-10 rounded-full bg-zinc-900 flex items-center justify-center text-white shadow-lg shadow-zinc-200 hover:scale-105 active:scale-95 transition-all disabled:opacity-50 disabled:scale-100"
+          >
+            <Send className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 // --- Components ---
 
@@ -1300,74 +1465,80 @@ export default function App() {
           </div>
         </section>
 
-        {/* Stats Grid */}
-        <section className="grid grid-cols-2 gap-4 mt-12">
-          <motion.div 
-            whileHover={{ y: -4 }}
-            className="bg-white border border-zinc-100 p-6 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.02)] flex flex-col justify-between"
-          >
-            <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Market Volume</span>
-            <div className="mt-6">
-              <h3 className="text-2xl md:text-3xl font-bold font-headline text-zinc-900">1,284 ETH</h3>
-              <p className="text-[10px] text-emerald-600 font-bold mt-2 flex items-center gap-1">
-                <span className="text-lg leading-none">↑</span> 12.4% <span className="text-zinc-400 ml-1 font-medium">24H</span>
-              </p>
-            </div>
-          </motion.div>
-          <motion.div 
-            whileHover={{ y: -4 }}
-            className="bg-white border border-zinc-100 p-6 rounded-3xl shadow-[0_8px_30_rgb(0,0,0,0.02)] flex flex-col justify-between"
-          >
-            <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Active Bids</span>
-            <div className="mt-6">
-              <h3 className="text-2xl md:text-3xl font-bold font-headline text-zinc-900">432</h3>
-              <p className="text-[10px] text-zinc-400 font-bold mt-2 tracking-wider">85 NEW TODAY</p>
-            </div>
-          </motion.div>
-        </section>
+        {activeCategory === 'Knowledge Base' ? (
+          <KnowledgeBase />
+        ) : (
+          <>
+            {/* Stats Grid */}
+            <section className="grid grid-cols-2 gap-4 mt-12">
+              <motion.div 
+                whileHover={{ y: -4 }}
+                className="bg-white border border-zinc-100 p-6 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.02)] flex flex-col justify-between"
+              >
+                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Market Volume</span>
+                <div className="mt-6">
+                  <h3 className="text-2xl md:text-3xl font-bold font-headline text-zinc-900">1,284 ETH</h3>
+                  <p className="text-[10px] text-emerald-600 font-bold mt-2 flex items-center gap-1">
+                    <span className="text-lg leading-none">↑</span> 12.4% <span className="text-zinc-400 ml-1 font-medium">24H</span>
+                  </p>
+                </div>
+              </motion.div>
+              <motion.div 
+                whileHover={{ y: -4 }}
+                className="bg-white border border-zinc-100 p-6 rounded-3xl shadow-[0_8px_30_rgb(0,0,0,0.02)] flex flex-col justify-between"
+              >
+                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Active Bids</span>
+                <div className="mt-6">
+                  <h3 className="text-2xl md:text-3xl font-bold font-headline text-zinc-900">432</h3>
+                  <p className="text-[10px] text-zinc-400 font-bold mt-2 tracking-wider">85 NEW TODAY</p>
+                </div>
+              </motion.div>
+            </section>
 
-        {/* Asset Grid Header */}
-        <div className="flex justify-between items-end mt-20 mb-10 border-b border-zinc-100 pb-6">
-          <div>
-            <h2 className="text-xl md:text-2xl font-bold font-headline tracking-tight uppercase text-zinc-900">Featured Collections</h2>
-          </div>
-          <button className="text-zinc-400 hover:text-zinc-900 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest transition-colors">
-            Filter <ChevronDown className="w-3 h-3" />
-          </button>
-        </div>
-
-        {/* Asset Grid */}
-        <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-12">
-          {assets.map((asset) => (
-            <AssetCard 
-              key={asset.id} 
-              asset={asset} 
-              onBuyClick={handleBuyClick}
-            />
-          ))}
-          
-          {/* Skeleton/Placeholder */}
-          <div className="bg-white p-8 rounded-3xl border border-dashed border-zinc-200 flex flex-col items-center justify-center h-[450px] gap-4">
-            <div className="w-12 h-12 rounded-full bg-zinc-50 flex items-center justify-center">
-              <Plus className="w-6 h-6 text-zinc-300" />
+            {/* Asset Grid Header */}
+            <div className="flex justify-between items-end mt-20 mb-10 border-b border-zinc-100 pb-6">
+              <div>
+                <h2 className="text-xl md:text-2xl font-bold font-headline tracking-tight uppercase text-zinc-900">Featured Collections</h2>
+              </div>
+              <button className="text-zinc-400 hover:text-zinc-900 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest transition-colors">
+                Filter <ChevronDown className="w-3 h-3" />
+              </button>
             </div>
-            <p className="text-zinc-300 text-[10px] font-bold uppercase tracking-[0.2em] text-center">
-              More assets <br/> loading...
-            </p>
-          </div>
-        </section>
 
-        {/* Loading State */}
-        <div className="flex flex-col items-center justify-center py-24 gap-6">
-          <div className="w-12 h-[1px] bg-zinc-100 relative overflow-hidden">
-            <motion.div 
-              animate={{ x: ['-100%', '100%'] }}
-              transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
-              className="absolute inset-0 bg-zinc-900"
-            />
-          </div>
-          <p className="text-zinc-400 text-[9px] font-bold uppercase tracking-[0.4em]">Synchronizing Ledger</p>
-        </div>
+            {/* Asset Grid */}
+            <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-12">
+              {assets.map((asset) => (
+                <AssetCard 
+                  key={asset.id} 
+                  asset={asset} 
+                  onBuyClick={handleBuyClick}
+                />
+              ))}
+              
+              {/* Skeleton/Placeholder */}
+              <div className="bg-white p-8 rounded-3xl border border-dashed border-zinc-200 flex flex-col items-center justify-center h-[450px] gap-4">
+                <div className="w-12 h-12 rounded-full bg-zinc-50 flex items-center justify-center">
+                  <Plus className="w-6 h-6 text-zinc-300" />
+                </div>
+                <p className="text-zinc-300 text-[10px] font-bold uppercase tracking-[0.2em] text-center">
+                  More assets <br/> loading...
+                </p>
+              </div>
+            </section>
+
+            {/* Loading State */}
+            <div className="flex flex-col items-center justify-center py-24 gap-6">
+              <div className="w-12 h-[1px] bg-zinc-100 relative overflow-hidden">
+                <motion.div 
+                  animate={{ x: ['-100%', '100%'] }}
+                  transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
+                  className="absolute inset-0 bg-zinc-900"
+                />
+              </div>
+              <p className="text-zinc-400 text-[9px] font-bold uppercase tracking-[0.4em]">Synchronizing Ledger</p>
+            </div>
+          </>
+        )}
       </main>
 
       {/* Footer */}

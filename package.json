@@ -25,6 +25,7 @@
     "net-browserify": "^0.2.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "react-markdown": "^10.1.0",
     "readable-stream": "^4.7.0",
     "tailwind-merge": "^3.5.0",
     "util": "^0.12.5",
